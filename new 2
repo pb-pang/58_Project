@@ -1,0 +1,471 @@
+select 
+    a.daystr1
+    ,WorkCount       `工作时间进线量`
+    ,WorkOffCount    `非工作时间进线量`
+    ,EnterGroupCount `来电总量`
+    ,kehucount       `来电客户数`
+    --进队列来电量
+    ,InCount         `成功转人工量`
+    ,TwentyAnswer    `20s内应答电话量`
+    ,AnswerCount     `接起量`
+    ,AnswerCount_giveup     `放弃量`
+    ,TransToSLCount   `转评价`
+    ,SLCount          `参评`
+    ,GoodCount        `满意量`
+    --一般量
+    ,BadCount         `不满意`
+    ,OutCount         `呼出量`
+    ,OutCount_success       `外呼成功量`
+    ,AnswerCount_rate  `接听率`
+    ,EnterGroupCount_rep   `重复进线率`
+    ,service_level       `服务水平`
+    ,join_evaluate_rate    `参评率`
+    ,satisfaction_rate     `满意度`
+    ,synthesize_satisfaction_rate   `综合满意度`
+    --呼叫转接率（暂时没有）
+    --呼叫放弃率
+    ,person_utilize_rate    `人员利用率`
+    --,concat(round((tb2.CallLength / tb2.login_total_duration),2),'%')   as `人员利用率`
+--平均呼入时长
+    ,case when round((InTime / AnswerCount),1) is null then 0 else round((InTime / AnswerCount),1) end as `平均呼入时长`
+--平均呼入处理时长 
+    ,case when round((InTime + traffic_disposal_total_duration) / AnswerCount,1) is null 
+    then 0 else round((InTime + traffic_disposal_total_duration) / AnswerCount,1) end 
+    as `平均呼入处理时长`
+--平均呼出时长
+    ,case when round(OutTime / OutCount_success,1) is null then 0
+    else round(OutTime / OutCount_success,1) end as
+    `平均呼出时长`
+--平均呼出处理时长    
+    ,round(traffic_disposal_total_duration / OutCount_success,1) `平均呼出处理时长`
+--平均处理时长(呼出)
+    ,case when round((OutTime + traffic_disposal_total_duration) / AnswerCount,1) is null
+    then 0 else round((OutTime + traffic_disposal_total_duration) / AnswerCount,1) end as  
+    `平均呼出处理时长`
+--平均振铃时长
+    ,case when round(ring_total_duration / AlertCount,1) is null then 0 
+    else round(ring_total_duration / AlertCount,1) end as
+    `平均振铃时长`
+from
+    (select
+        tb1.dayStr1
+        ,sum(tb1.WorkCount) WorkCount  --`工作时间进线量(含消费金融)`
+        ,sum(tb1.WorkOffCount) WorkOffCount  --`非工作时间进线量(含消费金融)`
+        ,sum(tb1.EnterGroupCount) EnterGroupCount  --`车金融进组量`
+        ,sum(tb1.AnswerCount) AnswerCount  --`车金融接听量`
+        --,concat(round(sum(tb1.AnswerCount)/sum(tb1.EnterGroupCount),3)*100,'%') AnswerCount_rate   --`接听率`
+        ,round(sum(tb1.AnsWaitSecs)/sum(case when tb1.AnsWaitSecs > 0 then 1 else 0 end)) AnsWaitSecs_avg   --`接听电话平均等待时长`
+        ,Max(tb1.AnsWaitSecs) as AnsWaitSecs  --`接听电话最大等待时长`
+        ,round(sum(tb1.AbaWaitSecs)/sum(case when tb1.AbaWaitSecs > 0 then 1 else 0 end)) AbaWaitSecs_avg   --`放弃电话平均等待时长`
+        ,Max(tb1.AbaWaitSecs) AbaWaitSecs_max   --`放弃电话最大等待时长`
+        ,count(DISTINCT CASE WHEN tb1.groupName = '车金融' and tb1.QueueBeginTime != '1970-01-01 00:00:00' THEN tb1.remotenumber end) remotenumber_rep   --`重复进组客户数`
+        ,concat(round((sum(tb1.EnterGroupCount)-count(DISTINCT CASE WHEN tb1.groupName = '车金融' and tb1.QueueBeginTime != '1970-01-01 00:00:00' THEN tb1.remotenumber end))/sum(tb1.EnterGroupCount),3)*100,'%') EnterGroupCount_rep   --`重复进线率`
+        --,sum(tb1.WorkCount)          --工作时间进线量
+        --,sum(tb1.WorkOffCount)      --非工作时间进线量
+        --,sum(tb1.EnterGroupCount)   --来电总量
+        ,count(distinct tb1.kehucount) kehucount     --来电客户数（去重）
+        --,sum(InCount)                 --进队列来电量
+        ,sum(tb1.InCount) InCount                --成功转人工量
+        ,sum(tb1.TwentyAnswer)  TwentyAnswer          --20s内应答电话量
+        --,sum(tb1.AnswerCount)  AnswerCount          --接起量
+        ,sum(tb1.InCount) - sum(tb1.AnswerCount)  AnswerCount_giveup         --放弃量
+        ,sum(tb1.TransToSLCount) TransToSLCount           --转评价
+        ,sum(tb1.SLCount) SLCount          --参评
+        ,sum(tb1.GoodCount) GoodCount          --满意量
+        --一般量
+        ,sum(tb1.BadCount) BadCount          --不满意
+        ,sum(tb1.OutCount) OutCount          --呼出
+        ,sum(tb1.OutCount_success) OutCount_success          --外呼成功量
+        ,sum(tb1.InTime) InTime                              --呼入总时间
+        ,sum(tb1.OutTime) OutTime                              --呼出总时间
+        ,sum(tb1.AlertCount) AlertCount                          --`员工来电量`
+        ,concat(round(sum(tb1.AnswerCount) * 100 / sum(tb1.InCount),2),'%') AnswerCount_rate  --接听率
+        --,concat(round((sum(tb1.EnterGroupCount)-count(DISTINCT CASE WHEN tb1.groupName = '车金融' and tb1.QueueBeginTime != '1970-01-01 00:00:00' THEN tb1.remotenumber end))/sum(tb1.EnterGroupCount),3)*100,'%') EnterGroupCount_rep  --`重复进线率`
+        ,case when sum(tb1.AnswerCount) = 0 then 0 else concat(round(sum(tb1.TwentyAnswer) * 100/ sum(tb1.AnswerCount)),'%') end as service_level  --`服务水平`
+        ,case when sum(tb1.AnswerCount) = 0 then 0 else concat(round(sum(tb1.SLCount) * 100/ sum(tb1.AnswerCount)),'%') end as join_evaluate_rate   --`参评率`
+        ,case when concat(round(sum(tb1.GoodCount) * 100 / sum(tb1.SLCount),2),'%') is null 
+        then 0 else concat(round(sum(tb1.GoodCount) * 100 / sum(tb1.SLCount),2),'%') end as satisfaction_rate  --满意度
+        ,case when concat(round(sum(tb1.SLCount) * 100/ sum(tb1.AnswerCount) * sum(tb1.GoodCount) / sum(tb1.SLCount),2),'%')
+        is null then 0 else  concat(round(sum(tb1.SLCount) * 100/ sum(tb1.AnswerCount) * sum(tb1.GoodCount) / sum(tb1.SLCount),2),'%') end  as  synthesize_satisfaction_rate --综合满意度
+    --呼叫转接率
+    --呼叫放弃率    
+    from     
+        (select 
+            cdf.daystr dayStr1
+            ,cdf.callid callid
+            ,cdf.groupName groupName 
+            ,cdf.remotenumber remotenumber
+            ,cdf.startTime startTime
+            ,cdf.QueueBeginTime QueueBeginTime
+            ,cdf.SeatRingTime SeatRingTime
+            ,cdf.beginTime beginTime
+            ,cdf.QueueEndTime QueueEndTime
+            ,cdf.endTime endTime
+        --工作时间进线量
+            ,case when cdf.callType = '呼入' and hour(cdf.startTime) between 9 and 20 then 1 else 0 end as WorkCount  
+        --非工作时间进线量
+            ,case when cdf.callType = '呼入' and hour(cdf.startTime) > 20 or hour(cdf.startTime) < 9 then 1 else 0 
+            end as WorkOffCount   
+        --来电量
+            ,case when cdf.callType = '呼入' and cdf.groupName = '车金融' and cdf.QueueBeginTime != '1970-01-01 00:00:00' 
+            then 1 else 0 end as EnterGroupCount 
+        --来电客户数
+            ,case when cdf.callType = '呼入' and cdf.groupName = '车金融' and cdf.QueueBeginTime != '1970-01-01 00:00:00' 
+            then remotenumber else null end as kehucount 
+        --接听量    
+            ,case when cdf.callType = '呼入' and cdf.groupName = '车金融' and cdf.QueueBeginTime != '1970-01-01 00:00:00' 
+            and cdf.beginTime != '1970-01-01 00:00:00' then 1 else 0 end as AnswerCount 
+        --20s接起
+            ,case when cdf.groupName = '车金融' and cdf.QueueBeginTime != '1970-01-01 00:00:00' 
+            and cdf.BeginTime != '1970-01-01 00:00:00' 
+            and (unix_timestamp(cdf.BeginTime)-unix_timestamp(cdf.SeatRingTime)) < 20 then 1 else 0 
+            end as TwentyAnswer        --`二十秒内接起量1`
+        --放弃量 = 来电量 - 接起量
+        --转评价
+            ,case when cdf.csr in ('-1','1','2','3') then 1 else 0 end as TransToSLCount
+        --参评
+            ,case when cdf.csr in ('1','2','3') then 1 else 0 end as SLCount 
+        --好评
+            ,case when cdf.csr in ('1','2') then 1 else 0 end as GoodCount 
+        --不满意
+            ,case when cdf.csr in ('3') then 1 else 0 end as BadCount 
+        --呼出
+            ,case when cdf.callType = '呼出' then 1 else 0 end as OutCount
+        --成功外呼
+            ,case when cdf.callType = '呼出' and cdf.BeginTime != '1970-01-01 00:00:00' then 1 else 0 end as OutCount_success 
+        --队列时间差
+            ,case when cdf.groupName = '车金融' and cdf.QueueBeginTime != '1970-01-01 00:00:00' 
+            and cdf.beginTime != '1970-01-01 00:00:00' 
+            then (unix_timestamp(cdf.QueueEndTime)-unix_timestamp(cdf.QueueBeginTime)) else 0 
+            end as AnsWaitSecs       
+        --进组时间差
+            ,case when cdf.groupName = '车金融' and cdf.QueueBeginTime != '1970-01-01 00:00:00' 
+            and cdf.beginTime = '1970-01-01 00:00:00' then (unix_timestamp(cdf.EndTime)-unix_timestamp
+            (cdf.QueueBeginTime)) else 0 end as AbaWaitSecs    
+        --开始时间差
+            ,case when cdf.groupName = '' then (unix_timestamp(cdf.EndTime)-unix_timestamp
+            (cdf.StartTime)) else 0 end as IvrWaitSecs   
+        --员工来电量
+            ,case when cdf.groupName = '车金融' and cdf.QueueBeginTime != '1970-01-01 00:00:00' and cdf.SeatRingTime !=  '1970-01-01 00:00:00' then 1 else 0 end as AlertCount
+        --呼出时间
+            ,case when cdf.callType = '呼出' then cdf.CallTimeLength else 0 end as OutTime 
+        --呼入量
+            ,case when cdf.callType = '呼入' and cdf.groupName = '车金融' and cdf.beginTime != '1970-01-01 00:00:00' then 1 else 0 end as InCount 
+        --呼入时间    
+            ,case when cdf.callType = '呼入' and cdf.groupName = '车金融' and cdf.beginTime != '1970-01-01 00:00:00' then cdf.CallTimeLength else 0 end as InTime  
+        from   
+            hdp_jinrong_qiangui_defaultdb.itf_kf_hdp_mis_dd_defaultdb_o_s_call_data_finance cdf
+        where 
+            to_date(cdf.startTime) = '${outFileSuffix}'
+            and cdf.daystr = '${dateSuffix}') tb1
+     group by 
+        tb1.daystr1) a
+    left join   
+        (select 
+            daystr1 -- `报表日期`
+            ,sum((CASE  statusname WHEN '呼出' THEN  StatusDuration ELSE 0 end)+ 
+            (CASE  statusname WHEN '话后处理' THEN  StatusDuration ELSE 0 end)+
+            (CASE  statusname WHEN '通话中' THEN  StatusDuration ELSE 0 end)+
+            (CASE  statusname WHEN '小休' THEN  StatusDuration ELSE 0 end)+
+            (CASE  statusname WHEN '置闲' THEN  StatusDuration ELSE 0 end)+
+            (CASE  statusname WHEN '振铃' THEN  StatusDuration ELSE 0 end)) as login_total_duration --`登录总时长`
+            ,sum(CASE d.statusname WHEN '置闲' THEN d.StatusDuration ELSE 0 end) as idle_total_duration --`空闲总时长`
+            ,sum(CASE d.statusname WHEN '振铃' THEN d.StatusDuration ELSE 0 end) as ring_total_duration --`振铃总时长`
+            ,sum(CASE d.statusname WHEN '小休' THEN d.StatusDuration ELSE 0 end) as vacationette_total_duration --小休总时长`
+            ,sum(CASE d.statusname WHEN '话后处理' THEN d.StatusDuration ELSE 0 end) as traffic_disposal_total_duration --`话务处理总时长`
+            ,sum(CASE d.statusname WHEN '通话中' THEN d.StatusDuration ELSE 0 end) CallLength --`通话中时长`
+            ,sum(CASE d.statusname WHEN '呼出' THEN d.StatusDuration ELSE 0 end) CallTimeLength --`呼出总时长`
+            ,sum(CASE d.statusname WHEN '通话中' THEN d.StatusDuration ELSE 0 end) +               --`通话中时长`
+            sum(CASE d.statusname WHEN '呼出' THEN d.StatusDuration ELSE 0 end) as call_total_duration  --`通话总时长`
+            ,concat(round((sum(CASE d.statusname WHEN '通话中' THEN d.StatusDuration ELSE 0 end) + 
+            sum(CASE d.statusname WHEN '呼出' THEN d.StatusDuration ELSE 0 end))* 100 / 
+            sum((CASE  statusname WHEN '呼出' THEN  StatusDuration ELSE 0 end)+ 
+            (CASE statusname WHEN '话后处理' THEN  StatusDuration ELSE 0 end)+
+            (CASE statusname WHEN '通话中' THEN  StatusDuration ELSE 0 end)+
+            (CASE statusname WHEN '小休' THEN  StatusDuration ELSE 0 end)+
+            (CASE statusname WHEN '置闲' THEN  StatusDuration ELSE 0 end)+
+            (CASE statusname WHEN '振铃' THEN  StatusDuration ELSE 0 end)),2),'%') as person_utilize_rate --`人员利用率`
+            ,concat(round((sum(CASE d.statusname WHEN '通话中' THEN d.StatusDuration ELSE 0 end) +
+            sum(CASE d.statusname WHEN '呼出' THEN d.StatusDuration ELSE 0 end) +
+            sum(CASE d.statusname WHEN '话后处理' THEN d.StatusDuration ELSE 0 end) +
+            sum(CASE d.statusname WHEN '置闲' THEN d.StatusDuration ELSE 0 end)) * 100 / 
+            sum((CASE  statusname WHEN '呼出' THEN  StatusDuration ELSE 0 end)+ 
+            (CASE  statusname WHEN '话后处理' THEN  StatusDuration ELSE 0 end)+
+            (CASE  statusname WHEN '通话中' THEN  StatusDuration ELSE 0 end)+
+            (CASE  statusname WHEN '小休' THEN  StatusDuration ELSE 0 end)+
+            (CASE  statusname WHEN '置闲' THEN  StatusDuration ELSE 0 end)+
+            (CASE  statusname WHEN '振铃' THEN  StatusDuration ELSE 0 end)),2),'%') as working_hours_utilize_rate --`工时利用率`    
+        from
+            (select 
+                a.daystr daystr1
+                ,a.statusname statusname  --状态显示名称
+                ,(unix_timestamp(a.endTime)-unix_timestamp(a.starttime)) as StatusDuration  --时间差
+            from 
+                hdp_jinrong_qiangui_defaultdb.itf_kf_hdp_mis_dd_defaultdb_o_s_agentlogs a --坐席状态表
+            where 
+                to_date(a.starttime) = ${startDate}  
+                and a.loginFlag =0
+                and a.daystr = '${dateSuffix}') d
+        group by 
+           daystr1) tb2
+    on a.daystr1 =  tb2.daystr1
+    
+    
+    
+    
+    
+    
+    
+    
+select 
+    a.daystr1
+    ,WorkCount       `工作时间进线量`
+    ,WorkOffCount    `非工作时间进线量`
+    ,EnterGroupCount `来电总量`
+    ,kehucount       `来电客户数`
+    --进队列来电量
+    ,InCount         `成功转人工量`
+    ,TwentyAnswer    `20s内应答电话量`
+    ,AnswerCount     `接起量`
+    ,AnswerCount_giveup     `放弃量`
+    ,TransToSLCount   `转评价`
+    ,SLCount          `参评`
+    ,GoodCount        `满意量`
+    --一般量
+    ,BadCount         `不满意`
+    ,OutCount         `呼出量`
+    ,OutCount_success       `外呼成功量`
+    ,AnswerCount_rate  `接听率`
+    ,EnterGroupCount_rep   `重复进线率`
+    ,service_level       `服务水平`
+    ,join_evaluate_rate    `参评率`
+    ,satisfaction_rate     `满意度`
+    ,synthesize_satisfaction_rate   `综合满意度`
+    --呼叫转接率（暂时没有）
+    --呼叫放弃率
+    ,person_utilize_rate    `人员利用率`
+    --,concat(round((tb2.CallLength / tb2.login_total_duration),2),'%')   as `人员利用率`
+
+--平均呼入时长
+    ,case when round((InTime / AnswerCount),1) is null then 0 else round((InTime / AnswerCount),1) end as `平均呼入时长`
+    
+--平均呼入处理时长 
+    ,case when round((InTime + traffic_disposal_total_duration) / AnswerCount,1) is null 
+    then 0 else round((InTime + traffic_disposal_total_duration) / AnswerCount,1) end 
+    as `平均呼入处理时长`
+--平均呼出时长
+    ,case when round(OutTime / OutCount_success,1) is null then 0
+    else round(OutTime / OutCount_success,1) end as
+    `平均呼出时长`
+
+--平均呼出处理时长    
+    ,round(traffic_disposal_total_duration / OutCount_success,1) `平均呼出处理时长`
+
+--平均处理时长(呼出)
+    ,case when round((OutTime + traffic_disposal_total_duration) / AnswerCount,1) is null
+    then 0 else round((OutTime + traffic_disposal_total_duration) / AnswerCount,1) end as  
+    `平均呼出处理时长`
+--平均振铃时长
+    ,case when round(ring_total_duration / AlertCount,1) is null then 0 
+    else round(ring_total_duration / AlertCount,1) end as
+    `平均振铃时长`
+from
+
+    (select
+        tb1.dayStr1
+        
+        ,sum(tb1.WorkCount) WorkCount  --`工作时间进线量(含消费金融)`
+
+        ,sum(tb1.WorkOffCount) WorkOffCount  --`非工作时间进线量(含消费金融)`
+
+        ,sum(tb1.EnterGroupCount) EnterGroupCount  --`车金融进组量`
+
+        ,sum(tb1.AnswerCount) AnswerCount  --`车金融接听量`
+
+        --,concat(round(sum(tb1.AnswerCount)/sum(tb1.EnterGroupCount),3)*100,'%') AnswerCount_rate   --`接听率`
+
+        ,round(sum(tb1.AnsWaitSecs)/sum(case when tb1.AnsWaitSecs > 0 then 1 else 0 end)) AnsWaitSecs_avg   --`接听电话平均等待时长`
+
+        ,Max(tb1.AnsWaitSecs) as AnsWaitSecs  --`接听电话最大等待时长`
+
+        ,round(sum(tb1.AbaWaitSecs)/sum(case when tb1.AbaWaitSecs > 0 then 1 else 0 end)) AbaWaitSecs_avg   --`放弃电话平均等待时长`
+
+        ,Max(tb1.AbaWaitSecs) AbaWaitSecs_max   --`放弃电话最大等待时长`
+
+        ,count(DISTINCT CASE WHEN tb1.groupName = '车金融' and tb1.QueueBeginTime != '1970-01-01 00:00:00' THEN tb1.remotenumber end) remotenumber_rep   --`重复进组客户数`
+
+        ,concat(round((sum(tb1.EnterGroupCount)-count(DISTINCT CASE WHEN tb1.groupName = '车金融' and tb1.QueueBeginTime != '1970-01-01 00:00:00' THEN tb1.remotenumber end))/sum(tb1.EnterGroupCount),3)*100,'%') EnterGroupCount_rep   --`重复进线率`
+        
+        --,sum(tb1.WorkCount)          --工作时间进线量
+        --,sum(tb1.WorkOffCount)      --非工作时间进线量
+        --,sum(tb1.EnterGroupCount)   --来电总量
+        ,count(distinct tb1.kehucount) kehucount     --来电客户数（去重）
+        --,sum(InCount)                 --进队列来电量
+        ,sum(tb1.InCount) InCount                --成功转人工量
+        ,sum(tb1.TwentyAnswer)  TwentyAnswer          --20s内应答电话量
+        --,sum(tb1.AnswerCount)  AnswerCount          --接起量
+        ,sum(tb1.InCount) - sum(tb1.AnswerCount)  AnswerCount_giveup         --放弃量
+        ,sum(tb1.TransToSLCount) TransToSLCount           --转评价
+        ,sum(tb1.SLCount) SLCount          --参评
+        ,sum(tb1.GoodCount) GoodCount          --满意量
+        --一般量
+        ,sum(tb1.BadCount) BadCount          --不满意
+        ,sum(tb1.OutCount) OutCount          --呼出
+        ,sum(tb1.OutCount_success) OutCount_success          --外呼成功量
+        ,sum(tb1.InTime) InTime                              --呼入总时间
+        ,sum(tb1.OutTime) OutTime                              --呼出总时间
+        ,sum(tb1.AlertCount) AlertCount                          --`员工来电量`
+        
+        
+        ,concat(round(sum(tb1.AnswerCount) * 100 / sum(tb1.InCount),2),'%') AnswerCount_rate  --接听率
+        
+        --,concat(round((sum(tb1.EnterGroupCount)-count(DISTINCT CASE WHEN tb1.groupName = '车金融' and tb1.QueueBeginTime != '1970-01-01 00:00:00' THEN tb1.remotenumber end))/sum(tb1.EnterGroupCount),3)*100,'%') EnterGroupCount_rep  --`重复进线率`
+        
+        ,case when sum(tb1.AnswerCount) = 0 then 0 else concat(round(sum(tb1.TwentyAnswer) * 100/ sum(tb1.AnswerCount)),'%') end as service_level  --`服务水平`
+        
+        ,case when sum(tb1.AnswerCount) = 0 then 0 else concat(round(sum(tb1.SLCount) * 100/ sum(tb1.AnswerCount)),'%') end as join_evaluate_rate   --`参评率`
+        
+        ,case when concat(round(sum(tb1.GoodCount) * 100 / sum(tb1.SLCount),2),'%') is null 
+        then 0 else concat(round(sum(tb1.GoodCount) * 100 / sum(tb1.SLCount),2),'%') end as satisfaction_rate  --满意度
+        
+        ,case when concat(round(sum(tb1.SLCount) * 100/ sum(tb1.AnswerCount) * sum(tb1.GoodCount) / sum(tb1.SLCount),2),'%')
+        is null then 0 else  concat(round(sum(tb1.SLCount) * 100/ sum(tb1.AnswerCount) * sum(tb1.GoodCount) / sum(tb1.SLCount),2),'%') end  as  synthesize_satisfaction_rate --综合满意度
+    --呼叫转接率
+    --呼叫放弃率    
+    from     
+        (select 
+            cdf.daystr dayStr1
+            ,cdf.callid callid
+            ,cdf.groupName groupName 
+            ,cdf.remotenumber remotenumber
+            ,cdf.startTime startTime
+            ,cdf.QueueBeginTime QueueBeginTime
+            ,cdf.SeatRingTime SeatRingTime
+            ,cdf.beginTime beginTime
+            ,cdf.QueueEndTime QueueEndTime
+            ,cdf.endTime endTime
+        --工作时间进线量
+            ,case when cdf.callType = '呼入' and hour(cdf.startTime) between 9 and 20 then 1 else 0 end as WorkCount  
+        --非工作时间进线量
+            ,case when cdf.callType = '呼入' and hour(cdf.startTime) > 20 or hour(cdf.startTime) < 9 then 1 else 0 
+            end as WorkOffCount   
+        --来电量
+            ,case when cdf.callType = '呼入' and cdf.groupName = '车金融' and cdf.QueueBeginTime != '1970-01-01 00:00:00' 
+            then 1 else 0 end as EnterGroupCount 
+        --来电客户数
+            ,case when cdf.callType = '呼入' and cdf.groupName = '车金融' and cdf.QueueBeginTime != '1970-01-01 00:00:00' 
+            then remotenumber else null end as kehucount 
+        --接听量    
+            ,case when cdf.callType = '呼入' and cdf.groupName = '车金融' and cdf.QueueBeginTime != '1970-01-01 00:00:00' 
+            and cdf.beginTime != '1970-01-01 00:00:00' then 1 else 0 end as AnswerCount 
+        --20s接起
+            ,case when cdf.groupName = '车金融' and cdf.QueueBeginTime != '1970-01-01 00:00:00' 
+            and cdf.BeginTime != '1970-01-01 00:00:00' 
+            and (unix_timestamp(cdf.BeginTime)-unix_timestamp(cdf.SeatRingTime)) < 20 then 1 else 0 
+            end as TwentyAnswer        --`二十秒内接起量1`
+        --放弃量 = 来电量 - 接起量
+
+        --转评价
+            ,case when cdf.csr in ('-1','1','2','3') then 1 else 0 end as TransToSLCount
+        --参评
+            ,case when cdf.csr in ('1','2','3') then 1 else 0 end as SLCount 
+        --好评
+            ,case when cdf.csr in ('1','2') then 1 else 0 end as GoodCount 
+        --不满意
+            ,case when cdf.csr in ('3') then 1 else 0 end as BadCount 
+        --呼出
+            ,case when cdf.callType = '呼出' then 1 else 0 end as OutCount
+        --成功外呼
+            ,case when cdf.callType = '呼出' and cdf.BeginTime != '1970-01-01 00:00:00' then 1 else 0 end as OutCount_success
+            
+        --队列时间差
+            ,case when cdf.groupName = '车金融' and cdf.QueueBeginTime != '1970-01-01 00:00:00' 
+            and cdf.beginTime != '1970-01-01 00:00:00' 
+            then (unix_timestamp(cdf.QueueEndTime)-unix_timestamp(cdf.QueueBeginTime)) else 0 
+            end as AnsWaitSecs       
+        --进组时间差
+            ,case when cdf.groupName = '车金融' and cdf.QueueBeginTime != '1970-01-01 00:00:00' 
+            and cdf.beginTime = '1970-01-01 00:00:00' then (unix_timestamp(cdf.EndTime)-unix_timestamp
+            (cdf.QueueBeginTime)) else 0 end as AbaWaitSecs    
+        --开始时间差
+            ,case when cdf.groupName = '' then (unix_timestamp(cdf.EndTime)-unix_timestamp
+            (cdf.StartTime)) else 0 end as IvrWaitSecs   
+        --员工来电量
+            ,case when cdf.groupName = '车金融' and cdf.QueueBeginTime != '1970-01-01 00:00:00' and cdf.SeatRingTime !=  '1970-01-01 00:00:00' then 1 else 0 end as AlertCount
+        --呼出时间
+            ,case when cdf.callType = '呼出' then cdf.CallTimeLength else 0 end as OutTime 
+        --呼入量
+            ,case when cdf.callType = '呼入' and cdf.groupName = '车金融' and cdf.beginTime != '1970-01-01 00:00:00' then 1 else 0 end as InCount 
+        --呼入时间    
+            ,case when cdf.callType = '呼入' and cdf.groupName = '车金融' and cdf.beginTime != '1970-01-01 00:00:00' then cdf.CallTimeLength else 0 end as InTime  
+        from   
+            hdp_jinrong_qiangui_defaultdb.itf_kf_hdp_mis_dd_defaultdb_o_s_call_data_finance cdf
+        
+        where 
+            to_date(cdf.startTime) = '${outFileSuffix}'
+            and cdf.daystr = '${dateSuffix}') tb1
+    group by 
+        tb1.daystr1) a   
+    left join   
+        (select 
+            daystr1 -- `报表日期`
+            ,sum((CASE  statusname WHEN '呼出' THEN  StatusDuration ELSE 0 end)+ 
+            (CASE  statusname WHEN '话后处理' THEN  StatusDuration ELSE 0 end)+
+            (CASE  statusname WHEN '通话中' THEN  StatusDuration ELSE 0 end)+
+            (CASE  statusname WHEN '小休' THEN  StatusDuration ELSE 0 end)+
+            (CASE  statusname WHEN '置闲' THEN  StatusDuration ELSE 0 end)+
+            (CASE  statusname WHEN '振铃' THEN  StatusDuration ELSE 0 end)) as login_total_duration --`登录总时长`
+            
+            ,sum(CASE d.statusname WHEN '置闲' THEN d.StatusDuration ELSE 0 end) as idle_total_duration --`空闲总时长`
+            
+            ,sum(CASE d.statusname WHEN '振铃' THEN d.StatusDuration ELSE 0 end) as ring_total_duration --`振铃总时长`
+            
+            ,sum(CASE d.statusname WHEN '小休' THEN d.StatusDuration ELSE 0 end) as vacationette_total_duration --小休总时长`
+            
+            ,sum(CASE d.statusname WHEN '话后处理' THEN d.StatusDuration ELSE 0 end) as traffic_disposal_total_duration --`话务处理总时长`
+            
+            ,sum(CASE d.statusname WHEN '通话中' THEN d.StatusDuration ELSE 0 end) CallLength --`通话中时长`
+            
+            ,sum(CASE d.statusname WHEN '呼出' THEN d.StatusDuration ELSE 0 end) CallTimeLength --`呼出总时长`
+            
+            ,sum(CASE d.statusname WHEN '通话中' THEN d.StatusDuration ELSE 0 end) +               --`通话中时长`
+            
+            sum(CASE d.statusname WHEN '呼出' THEN d.StatusDuration ELSE 0 end) as call_total_duration  --`通话总时长`
+
+            ,concat(round((sum(CASE d.statusname WHEN '通话中' THEN d.StatusDuration ELSE 0 end) + 
+            sum(CASE d.statusname WHEN '呼出' THEN d.StatusDuration ELSE 0 end))* 100 / 
+            sum((CASE  statusname WHEN '呼出' THEN  StatusDuration ELSE 0 end)+ 
+            (CASE statusname WHEN '话后处理' THEN  StatusDuration ELSE 0 end)+
+            (CASE statusname WHEN '通话中' THEN  StatusDuration ELSE 0 end)+
+            (CASE statusname WHEN '小休' THEN  StatusDuration ELSE 0 end)+
+            (CASE statusname WHEN '置闲' THEN  StatusDuration ELSE 0 end)+
+            (CASE statusname WHEN '振铃' THEN  StatusDuration ELSE 0 end)),2),'%') as person_utilize_rate --`人员利用率`
+            
+            ,concat(round((sum(CASE d.statusname WHEN '通话中' THEN d.StatusDuration ELSE 0 end) +
+            sum(CASE d.statusname WHEN '呼出' THEN d.StatusDuration ELSE 0 end) +
+            sum(CASE d.statusname WHEN '话后处理' THEN d.StatusDuration ELSE 0 end) +
+            sum(CASE d.statusname WHEN '置闲' THEN d.StatusDuration ELSE 0 end)) * 100 / 
+            sum((CASE  statusname WHEN '呼出' THEN  StatusDuration ELSE 0 end)+ 
+            (CASE  statusname WHEN '话后处理' THEN  StatusDuration ELSE 0 end)+
+            (CASE  statusname WHEN '通话中' THEN  StatusDuration ELSE 0 end)+
+            (CASE  statusname WHEN '小休' THEN  StatusDuration ELSE 0 end)+
+            (CASE  statusname WHEN '置闲' THEN  StatusDuration ELSE 0 end)+
+            (CASE  statusname WHEN '振铃' THEN  StatusDuration ELSE 0 end)),2),'%') as working_hours_utilize_rate --`工时利用率`    
+        from
+            (select 
+                a.daystr daystr1
+                ,a.statusname statusname  --状态显示名称
+                ,(unix_timestamp(a.endTime)-unix_timestamp(a.starttime)) as StatusDuration  --时间差
+            from 
+                hdp_jinrong_qiangui_defaultdb.itf_kf_hdp_mis_dd_defaultdb_o_s_agentlogs a --坐席状态表
+            where 
+                to_date(a.starttime) = ${startDate}  
+                and a.loginFlag =0
+                and a.daystr = '${dateSuffix}') d
+        group by 
+           daystr1) tb2
+    on a.daystr1 =  tb2.daystr1
+    
+    
+    
+    
